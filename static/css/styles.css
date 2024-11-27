@@ -1,0 +1,132 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f8fafc;
+}
+
+.draggable {
+    cursor: grab;
+    user-select: none;
+}
+
+.draggable:active {
+    cursor: grabbing;
+}
+
+.dropzone {
+    transition: all 0.2s ease;
+}
+
+.dropzone.drag-over {
+    border-color: #60a5fa;
+    background-color: #eff6ff;
+}
+
+.dropzone.valid-drop {
+    border-color: #34d399;
+    background-color: #ecfdf5;
+    border-width: 2px;
+    border-style: dashed;
+    transform: scale(1.01);
+}
+
+.dropzone.invalid-drop {
+    border-color: #f87171;
+    background-color: #fef2f2;
+    border-width: 2px;
+    border-style: dashed;
+    transform: scale(0.99);
+}
+
+.condition-card {
+    background-color: #ffffff;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    border: 1px solid #e5e7eb;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    animation: slide-in 0.2s ease-out;
+}
+
+@keyframes slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.trade-details {
+    display: none;
+}
+
+.trade-details.expanded {
+    display: table-row;
+}
+
+.trade-row {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.trade-row:hover {
+    background-color: #f8fafc;
+}
+
+.trade-row .expand-icon {
+    transition: transform 0.2s ease;
+}
+
+.trade-row.expanded .expand-icon {
+    transform: rotate(90deg);
+}
+
+.metric-card {
+    transition: all 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.toast {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    padding: 0.75rem 1.5rem;
+    background-color: #1a1a1a;
+    color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(1rem);
+    transition: all 0.2s ease-out;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+} 

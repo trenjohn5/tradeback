@@ -1,10 +1,33 @@
 document.addEventListener('DOMContentLoaded', function() {
     // UI Elements
+    const timeframePeriodEl = document.getElementById('timeframe-period');
+    const timeframeIntervalEl = document.getElementById('timeframe-interval');
     const totalReturnEl = document.getElementById('total-return');
     const winRateEl = document.getElementById('win-rate');
     const maxDrawdownEl = document.getElementById('max-drawdown');
     const totalTradesEl = document.getElementById('total-trades');
     const tradeHistoryEl = document.getElementById('trade-history');
+
+    // Add timeframe change handlers
+    timeframePeriodEl.addEventListener('change', function() {
+        if (window.strategyBuilder) {
+            window.strategyBuilder.runBacktest();
+        }
+    });
+
+    timeframeIntervalEl.addEventListener('change', function() {
+        if (window.strategyBuilder) {
+            window.strategyBuilder.runBacktest();
+        }
+    });
+
+    // Get current timeframe settings
+    function getTimeframeSettings() {
+        return {
+            period: timeframePeriodEl.value,
+            interval: timeframeIntervalEl.value
+        };
+    }
 
     // Update performance metrics in the UI
     function updateMetrics(results) {
@@ -200,9 +223,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleBacktestResponse(data) {
         if (data.status === 'success' && data.results) {
             updateMetrics(data.results);
+
+            // Update timeframe info if available
+            if (data.results.timeframe) {
+                const timeframe = data.results.timeframe;
+                console.log(`Backtest results for period: ${timeframe.period}, interval: ${timeframe.interval}`);
+                console.log(`Date range: ${timeframe.start_date} to ${timeframe.end_date}`);
+            }
         } else {
             console.error('Invalid backtest response:', data);
-            // Show error message to user
             alert('Error running backtest. Please check the console for details.');
         }
     }
@@ -210,6 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Export functions for use in other modules
     window.backtestHandler = {
         handleBacktestResponse,
-        updateMetrics
+        updateMetrics,
+        getTimeframeSettings
     };
 }); 

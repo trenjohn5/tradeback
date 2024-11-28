@@ -51,14 +51,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Fetch and update price data
     function fetchPriceData() {
-        fetch('/api/fetch-btc-data')
-            .then(response => response.json())
-            .then(data => {
-                updateChart(data);
-            })
-            .catch(error => {
-                console.error('Error fetching price data:', error);
-            });
+        const timeframePeriod = document.getElementById('timeframe-period')?.value || '1y';
+        const timeframeInterval = document.getElementById('timeframe-interval')?.value || '1d';
+
+        console.log(`Fetching price data for period: ${timeframePeriod}, interval: ${timeframeInterval}`);
+
+        fetch('/api/fetch-btc-data?' + new URLSearchParams({
+            period: timeframePeriod,
+            interval: timeframeInterval
+        }))
+        .then(response => response.json())
+        .then(data => {
+            updateChart(data);
+        })
+        .catch(error => {
+            console.error('Error fetching price data:', error);
+        });
     }
 
     // Update chart with new data
@@ -66,6 +74,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!priceChart) {
             initializeChart();
         }
+
+        console.log(`Updating chart with ${data.labels?.length || 0} data points`);
 
         priceChart.data.labels = data.labels;
         priceChart.data.datasets[0].data = data.prices;
@@ -110,6 +120,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize chart and fetch initial data
     initializeChart();
     fetchPriceData();
+
+    // Add timeframe change handlers
+    const timeframePeriodEl = document.getElementById('timeframe-period');
+    const timeframeIntervalEl = document.getElementById('timeframe-interval');
+
+    if (timeframePeriodEl) {
+        timeframePeriodEl.addEventListener('change', fetchPriceData);
+    }
+    if (timeframeIntervalEl) {
+        timeframeIntervalEl.addEventListener('change', fetchPriceData);
+    }
 
     // Export functions for use in other modules
     window.chartHandler = {

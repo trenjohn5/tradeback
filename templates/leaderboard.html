@@ -95,16 +95,16 @@
                                     ${strategy.name}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    ${strategy.total_return.toFixed(2)}%
+                                    ${strategy.metrics.total_return.toFixed(2)}%
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    ${strategy.sharpe_ratio.toFixed(2)}
+                                    ${strategy.metrics.sharpe_ratio.toFixed(2)}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    ${strategy.win_rate.toFixed(2)}%
+                                    ${strategy.metrics.win_rate.toFixed(2)}%
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                    ${strategy.risk_adjusted_return.toFixed(2)}
+                                    ${strategy.metrics.risk_adjusted_return.toFixed(2)}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     <button onclick="loadStrategy('${strategy.id}')" 

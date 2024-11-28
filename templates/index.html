@@ -287,6 +287,29 @@
             <div class="lg:col-span-2 space-y-6">
                 <!-- Chart Section -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">Price Chart</h3>
+                        <div class="flex items-center">
+                            <div class="mr-3 text-sm text-gray-600">
+                                Backtest Period:
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <select id="timeframe-period" class="text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="1mo">1 Month</option>
+                                    <option value="3mo">3 Months</option>
+                                    <option value="6mo">6 Months</option>
+                                    <option value="1y" selected>1 Year</option>
+                                    <option value="2y">2 Years</option>
+                                    <option value="5y">5 Years</option>
+                                </select>
+                                <select id="timeframe-interval" class="text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <option value="1d" selected>Daily</option>
+                                    <option value="1wk">Weekly</option>
+                                    <option value="1mo">Monthly</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                     <canvas id="price-chart" class="w-full"></canvas>
                 </div>
                 
@@ -406,8 +429,16 @@
         </div>
     </div>
     
-    <script src="{{ url_for('static', filename='js/chart-handler.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/strategy-builder.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/backtest.js') }}"></script>
+    <!-- Load Chart.js first -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Then load our modules -->
+    <script type="module" src="{{ url_for('static', filename='js/modules/utils.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/chart-handler.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/conditions.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/strategy.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/backtest.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/ui-components.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/modules/main.js') }}"></script>
 </body>
 </html> 

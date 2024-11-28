@@ -6,6 +6,81 @@ document.addEventListener('DOMContentLoaded', function() {
         exit: []
     };
 
+    // Check for strategy ID in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const strategyId = urlParams.get('strategy');
+    if (strategyId) {
+        loadStrategyFromId(strategyId);
+    }
+
+    // Function to load strategy from ID
+    function loadStrategyFromId(id) {
+        fetch(`/api/strategy/${id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.config) {
+                    // Clear existing strategy
+                    strategy = {
+                        indicators: [],
+                        entry: [],
+                        exit: []
+                    };
+                    activeIndicatorsEl.innerHTML = '';
+                    entryDropzone.innerHTML = getDropzoneContent('entry');
+                    exitDropzone.innerHTML = getDropzoneContent('exit');
+                    
+                    // Load indicators
+                    data.config.indicators.forEach(indicator => {
+                        addIndicator(indicator.type, indicator.params);
+                    });
+
+                    // Load entry conditions
+                    data.config.entry_conditions.forEach(condition => {
+                        if (condition.type === 'indicator-compare') {
+                            addIndicatorCondition(entryDropzone, condition);
+                        } else if (condition.type === 'price-level') {
+                            addPriceCondition(entryDropzone, condition);
+                        }
+                    });
+
+                    // Load exit conditions
+                    data.config.exit_conditions.forEach(condition => {
+                        if (condition.type === 'indicator-compare') {
+                            addIndicatorCondition(exitDropzone, condition);
+                        } else if (condition.type === 'price-level') {
+                            addPriceCondition(exitDropzone, condition);
+                        }
+                    });
+
+                    // Show success message
+                    showToast('Strategy loaded successfully!');
+                    
+                    // Remove strategy ID from URL without refreshing
+                    window.history.replaceState({}, '', '/');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading strategy:', error);
+                showToast('Error loading strategy');
+            });
+    }
+
+    function getDropzoneContent(type) {
+        return `
+            <div class="flex flex-col items-center justify-center h-full">
+                <p class="text-gray-400 text-sm text-center">Drop your ${type} conditions here</p>
+                <div class="mt-2 flex space-x-2">
+                    <button class="add-condition-btn px-3 py-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+                        + Add Indicator Condition
+                    </button>
+                    <button class="add-price-btn px-3 py-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+                        + Add Price Level
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     // UI Elements
     const activeIndicatorsEl = document.getElementById('active-indicators');
     const entryDropzone = document.getElementById('entry-dropzone');
@@ -57,13 +132,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
         zone.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation();  // Stop event from bubbling up
+            
+            // Ensure we're only handling drops directly on the dropzone
+            if (e.target !== zone && !zone.contains(e.target)) {
+                return;
+            }
+            
             console.log('Drop on:', zone.id);
             zone.classList.remove('drag-over');
             
             const type = e.dataTransfer.getData('text/plain');
             console.log('Dropped type:', type);
             
-            if (zone === activeIndicatorsEl && ['sma', 'rsi', 'macd'].includes(type)) {
+            if (zone === activeIndicatorsEl) {
                 addIndicator(type);
             }
         });
@@ -100,12 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize buttons
     initializeConditionButtons();
 
-    function addIndicatorCondition(dropzone) {
+    function addIndicatorCondition(dropzone, preset = null) {
         // Clear placeholder if present
         const placeholder = dropzone.querySelector('.flex.flex-col');
         if (placeholder) {
             dropzone.innerHTML = '';
         }
+
+        const isEntryDropzone = dropzone.id === 'entry-dropzone';
 
         const card = document.createElement('div');
         card.className = 'condition-card bg-white p-4 rounded-lg shadow mb-4';
@@ -118,50 +202,32 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="space-y-2">
                 <select class="indicator-select w-full text-sm border rounded p-2 bg-white">
                     ${strategy.indicators.map(ind => `
-                        <option value="${ind.type}">${getIndicatorName(ind.type)}</option>
+                        <option value="${ind.type}" ${preset && preset.indicator === ind.type ? 'selected' : ''}>
+                            ${getIndicatorName(ind.type)}
+                        </option>
                     `).join('')}
                 </select>
                 <select class="condition-select w-full text-sm border rounded p-2 bg-white">
-                    <option value="crosses-above">Crosses Above</option>
-                    <option value="crosses-below">Crosses Below</option>
-                    <option value="is-above">Is Above</option>
-                    <option value="is-below">Is Below</option>
+                    <option value="crosses-above" ${preset && preset.condition === 'crosses-above' ? 'selected' : ''}>Crosses Above</option>
+                    <option value="crosses-below" ${preset && preset.condition === 'crosses-below' ? 'selected' : ''}>Crosses Below</option>
+                    <option value="is-above" ${preset && preset.condition === 'is-above' ? 'selected' : ''}>Is Above</option>
+                    <option value="is-below" ${preset && preset.condition === 'is-below' ? 'selected' : ''}>Is Below</option>
                 </select>
                 <div class="relative">
                     <input type="number" name="value" placeholder="Enter value" step="any"
-                           class="w-full text-sm border rounded p-2 bg-white">
+                           class="w-full text-sm border rounded p-2 bg-white"
+                           value="${preset ? preset.value : ''}">
                     <div class="absolute right-3 top-2 text-gray-500 text-sm indicator-value-hint"></div>
                 </div>
             </div>
         `;
-
-        // Add indicator-specific value hints
-        const indicatorSelect = card.querySelector('.indicator-select');
-        const valueHint = card.querySelector('.indicator-value-hint');
-        
-        function updateValueHint() {
-            const selectedType = indicatorSelect.value;
-            switch(selectedType) {
-                case 'rsi':
-                    valueHint.textContent = '(0-100)';
-                    break;
-                case 'macd':
-                    valueHint.textContent = '(signal line)';
-                    break;
-                default:
-                    valueHint.textContent = '';
-            }
-        }
-        
-        indicatorSelect.addEventListener('change', updateValueHint);
-        updateValueHint();  // Set initial hint
 
         setupComponentInteractions(card);
         dropzone.appendChild(card);
         updateStrategy();
     }
 
-    function addPriceCondition(dropzone) {
+    function addPriceCondition(dropzone, preset = null) {
         // Clear placeholder if present
         const placeholder = dropzone.querySelector('.flex.flex-col');
         if (placeholder) {
@@ -178,15 +244,16 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="space-y-2">
                 <select class="condition-select w-full text-sm border rounded p-2 bg-white">
-                    <option value="crosses-above">Crosses Above</option>
-                    <option value="crosses-below">Crosses Below</option>
-                    <option value="is-above">Is Above</option>
-                    <option value="is-below">Is Below</option>
+                    <option value="crosses-above" ${preset && preset.condition === 'crosses-above' ? 'selected' : ''}>Crosses Above</option>
+                    <option value="crosses-below" ${preset && preset.condition === 'crosses-below' ? 'selected' : ''}>Crosses Below</option>
+                    <option value="is-above" ${preset && preset.condition === 'is-above' ? 'selected' : ''}>Is Above</option>
+                    <option value="is-below" ${preset && preset.condition === 'is-below' ? 'selected' : ''}>Is Below</option>
                 </select>
                 <div class="relative">
                     <span class="absolute left-3 top-2 text-gray-500">$</span>
                     <input type="number" name="price" placeholder="Enter price level" step="any"
-                           class="w-full text-sm border rounded p-2 pl-6 bg-white">
+                           class="w-full text-sm border rounded p-2 pl-6 bg-white"
+                           value="${preset ? preset.price : ''}">
                     <div class="absolute right-3 top-2 text-gray-500 text-sm">USD</div>
                 </div>
             </div>
@@ -232,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function addIndicator(type) {
+    function addIndicator(type, params = null) {
         console.log('Adding indicator:', type);
         
         // Check for duplicate
@@ -246,6 +313,9 @@ document.addEventListener('DOMContentLoaded', function() {
             activeIndicatorsEl.innerHTML = '';
         }
 
+        // Use provided params or get defaults
+        const indicatorParams = params || getDefaultParams(type);
+
         // Create indicator card
         const card = document.createElement('div');
         card.className = 'condition-card bg-white p-4 rounded-lg shadow mb-4';
@@ -255,7 +325,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span class="font-medium text-gray-900">${getIndicatorName(type)}</span>
                 <button class="delete-component text-gray-400 hover:text-gray-600">×</button>
             </div>
-            ${createParamsHTML(getDefaultParams(type))}
+            ${createParamsHTML(indicatorParams)}
         `;
 
         // Add delete handler
@@ -277,18 +347,26 @@ document.addEventListener('DOMContentLoaded', function() {
         activeIndicatorsEl.appendChild(card);
         strategy.indicators.push({
             type,
-            params: getDefaultParams(type)
+            params: indicatorParams
         });
 
         updateStrategy();
-        showToast('Indicator added successfully!');
+        if (!params) {  // Only show toast for manual additions
+            showToast('Indicator added successfully!');
+        }
     }
 
     function getIndicatorName(type) {
         const names = {
-            'sma': 'Moving Average',
-            'rsi': 'RSI',
-            'macd': 'MACD'
+            'sma': 'Simple Moving Average',
+            'ema': 'Exponential Moving Average',
+            'rsi': 'Relative Strength Index',
+            'macd': 'MACD',
+            'bb': 'Bollinger Bands',
+            'stoch': 'Stochastic Oscillator',
+            'atr': 'Average True Range',
+            'obv': 'On-Balance Volume',
+            'vwap': 'Volume Weighted Average Price'
         };
         return names[type] || type.toUpperCase();
     }
@@ -296,8 +374,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function getDefaultParams(type) {
         const defaults = {
             'sma': { Period: 20 },
-            'rsi': { Period: 14, Overbought: 70, Oversold: 30 },
-            'macd': { 'Fast Period': 12, 'Slow Period': 26, 'Signal Period': 9 }
+            'ema': { Period: 20 },
+            'rsi': { Period: 14 },
+            'macd': { 'Fast Period': 12, 'Slow Period': 26, 'Signal Period': 9 },
+            'bb': { 'Period': 20, 'StdDev': 2 },
+            'stoch': { 'K Period': 14, 'D Period': 3 },
+            'atr': { Period: 14 },
+            'obv': {},
+            'vwap': {}
         };
         return defaults[type] || {};
     }
@@ -441,24 +525,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Show loading state
         const runButton = this;
-        runButton.disabled = true;
         const originalText = runButton.textContent;
+        runButton.disabled = true;
         runButton.innerHTML = `
-            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
             Running Backtest...
         `;
 
-        // Prepare strategy data
+        // Prepare strategy data without name/description
         const backtestData = {
             indicators: strategy.indicators,
             entry_conditions: parseConditions(entryDropzone),
             exit_conditions: parseConditions(exitDropzone)
         };
-
-        console.log('Sending backtest data:', JSON.stringify(backtestData, null, 2));
 
         // Run backtest
         fetch('/api/backtest', {
@@ -485,83 +567,39 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Backtest results:', data);
             
             if (data.status === 'success') {
-                // Update strategy metrics
-                document.getElementById('strategy-return').textContent = data.strategy_metrics.total_return + '%';
-                document.getElementById('strategy-win-rate').textContent = data.strategy_metrics.win_rate + '%';
-                document.getElementById('strategy-drawdown').textContent = data.strategy_metrics.max_drawdown + '%';
-                document.getElementById('strategy-trades').textContent = data.strategy_metrics.total_trades;
+                // Update metrics display
+                updateMetricsDisplay(data);
 
-                // Update risk metrics
-                if (data.strategy_metrics.risk_metrics) {
-                    document.getElementById('strategy-time-in-market').textContent = 
-                        data.strategy_metrics.risk_metrics.time_in_market + '%';
-                    document.getElementById('strategy-sharpe').textContent = 
-                        data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2);
-                    document.getElementById('strategy-risk-adjusted').textContent = 
-                        data.strategy_metrics.risk_metrics.risk_adjusted_return.toFixed(2);
-                }
+                // Show save prompt
+                const savePrompt = document.createElement('div');
+                savePrompt.className = 'fixed bottom-4 right-4 bg-white text-gray-900 px-6 py-4 rounded-lg shadow-xl border border-gray-200 flex items-center space-x-4';
+                savePrompt.innerHTML = `
+                    <div class="flex-1">
+                        <p class="font-medium">Strategy tested successfully!</p>
+                        <p class="text-sm text-gray-600 mt-1">Would you like to save this strategy to the leaderboard?</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button class="px-3 py-1 text-sm text-gray-600 hover:text-gray-800" onclick="this.closest('div.fixed').remove()">
+                            No thanks
+                        </button>
+                        <button id="save-strategy-btn" class="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                            Save Strategy
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(savePrompt);
 
-                // Update buy & hold metrics
-                document.getElementById('buy-hold-return').textContent = data.buy_hold_metrics.total_return + '%';
-                document.getElementById('buy-hold-drawdown').textContent = data.buy_hold_metrics.max_drawdown + '%';
+                // Add click handler for save button
+                document.getElementById('save-strategy-btn').addEventListener('click', () => {
+                    savePrompt.remove();
+                    showSaveStrategyModal(backtestData);
+                });
 
-                // Update buy & hold risk metrics
-                if (data.buy_hold_metrics.risk_metrics) {
-                    document.getElementById('buy-hold-sharpe').textContent = 
-                        data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2);
-                    document.getElementById('buy-hold-risk-adjusted').textContent = 
-                        data.buy_hold_metrics.risk_metrics.risk_adjusted_return.toFixed(2);
-                }
-
-                // Show comparison
-                const comparisonDiv = document.getElementById('strategy-comparison');
-                const returnComparison = document.getElementById('return-comparison');
-                const riskComparison = document.getElementById('risk-comparison');
-                const timeComparison = document.getElementById('time-comparison');
-                
-                comparisonDiv.classList.remove('hidden');
-                
-                // Return comparison
-                const returnDiff = data.strategy_metrics.total_return - data.buy_hold_metrics.total_return;
-                if (returnDiff > 0) {
-                    returnComparison.innerHTML = `Your strategy <span class="text-green-600 font-medium">outperformed</span> buy & hold by <span class="text-green-600 font-medium">+${returnDiff.toFixed(2)}%</span>`;
-                } else if (returnDiff < 0) {
-                    returnComparison.innerHTML = `Your strategy <span class="text-red-600 font-medium">underperformed</span> buy & hold by <span class="text-red-600 font-medium">${returnDiff.toFixed(2)}%</span>`;
-                } else {
-                    returnComparison.innerHTML = `Your strategy <span class="text-gray-600 font-medium">matched</span> buy & hold returns`;
-                }
-
-                // Risk comparison
-                if (data.strategy_metrics.risk_metrics && data.buy_hold_metrics.risk_metrics) {
-                    const sharpeDiff = data.strategy_metrics.risk_metrics.sharpe_ratio - data.buy_hold_metrics.risk_metrics.sharpe_ratio;
-                    
-                    if (sharpeDiff > 0) {
-                        riskComparison.innerHTML = `On a risk-adjusted basis, your strategy shows <span class="text-green-600 font-medium">better</span> risk-reward characteristics with a higher Sharpe ratio (${data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2)} vs ${data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2)})`;
-                    } else if (sharpeDiff < 0) {
-                        riskComparison.innerHTML = `On a risk-adjusted basis, your strategy shows <span class="text-red-600 font-medium">worse</span> risk-reward characteristics with a lower Sharpe ratio (${data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2)} vs ${data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2)})`;
-                    } else {
-                        riskComparison.innerHTML = `Your strategy shows <span class="text-gray-600 font-medium">similar</span> risk-reward characteristics to buy & hold`;
+                setTimeout(() => {
+                    if (document.body.contains(savePrompt)) {
+                        savePrompt.remove();
                     }
-
-                    // Time in market comparison
-                    const timeInMarket = data.strategy_metrics.risk_metrics.time_in_market;
-                    timeComparison.innerHTML = `Your strategy spent <span class="font-medium">${timeInMarket.toFixed(1)}%</span> of the time in the market, compared to 100% for buy & hold. ${
-                        timeInMarket < 100 
-                            ? `This reduced market exposure could provide <span class="text-blue-600 font-medium">additional flexibility</span> for other opportunities.`
-                            : `This suggests a <span class="text-blue-600 font-medium">fully invested</span> approach similar to buy & hold.`
-                    }`;
-                }
-
-                // Update chart and trade history
-                if (window.chartHandler && data.trades) {
-                    window.chartHandler.addTradeMarkers(data.trades);
-                }
-
-                if (data.trades) {
-                    updateTradeHistory(data.trades);
-                }
-
-                showToast('Backtest completed successfully!');
+                }, 10000); // Remove after 10 seconds if not acted upon
             } else {
                 showToast(data.message || 'Error running backtest');
             }
@@ -576,6 +614,97 @@ document.addEventListener('DOMContentLoaded', function() {
             runButton.textContent = originalText;
         });
     });
+
+    // Function to show save modal
+    function showSaveStrategyModal(strategyData) {
+        const modal = document.getElementById('strategy-modal');
+        const nameInput = document.getElementById('strategy-name');
+        const descInput = document.getElementById('strategy-description');
+        modal.classList.remove('hidden');
+        nameInput.focus();
+
+        // Handle cancel
+        document.getElementById('cancel-save').onclick = function() {
+            modal.classList.add('hidden');
+            nameInput.value = '';
+            descInput.value = '';
+        };
+
+        // Handle save
+        document.getElementById('confirm-save').onclick = function() {
+            const strategyName = nameInput.value.trim();
+            if (!strategyName) {
+                showToast('Please enter a strategy name');
+                return;
+            }
+
+            // Show loading state
+            const saveButton = this;
+            const originalText = saveButton.textContent;
+            saveButton.disabled = true;
+            saveButton.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Saving...
+            `;
+
+            // Add name and description to strategy data
+            const saveData = {
+                ...strategyData,
+                name: strategyName,
+                description: descInput.value.trim()
+            };
+
+            // Save strategy
+            fetch('/api/save-strategy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(saveData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Hide modal
+                    modal.classList.add('hidden');
+                    nameInput.value = '';
+                    descInput.value = '';
+
+                    // Show success message
+                    const toast = document.createElement('div');
+                    toast.className = 'fixed bottom-4 right-4 bg-white text-gray-900 px-6 py-4 rounded-lg shadow-xl border border-gray-200 flex items-center space-x-4';
+                    toast.innerHTML = `
+                        <div class="flex-shrink-0">
+                            <svg class="h-6 w-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium">Strategy saved successfully!</p>
+                            <p class="text-sm text-gray-600">View it on the <a href="/leaderboard" class="text-blue-600 hover:text-blue-800">leaderboard</a></p>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-600" onclick="this.parentElement.remove()">×</button>
+                    `;
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 5000);
+                } else {
+                    showToast(data.message || 'Error saving strategy');
+                }
+            })
+            .catch(error => {
+                console.error('Save error:', error);
+                showToast(error.message || 'Error saving strategy');
+            })
+            .finally(() => {
+                // Reset button state
+                saveButton.disabled = false;
+                saveButton.textContent = originalText;
+            });
+        };
+    }
 
     function updateTradeHistory(trades) {
         const tradeHistory = document.getElementById('trade-history');
@@ -665,5 +794,83 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
 
         console.log('Updated trade history with trades:', completedTrades);
+    }
+
+    function updateMetricsDisplay(data) {
+        // Update strategy metrics
+        document.getElementById('strategy-return').textContent = data.strategy_metrics.total_return + '%';
+        document.getElementById('strategy-win-rate').textContent = data.strategy_metrics.win_rate + '%';
+        document.getElementById('strategy-drawdown').textContent = data.strategy_metrics.max_drawdown + '%';
+        document.getElementById('strategy-trades').textContent = data.strategy_metrics.total_trades;
+
+        // Update risk metrics
+        if (data.strategy_metrics.risk_metrics) {
+            document.getElementById('strategy-time-in-market').textContent = 
+                data.strategy_metrics.risk_metrics.time_in_market + '%';
+            document.getElementById('strategy-sharpe').textContent = 
+                data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2);
+            document.getElementById('strategy-risk-adjusted').textContent = 
+                data.strategy_metrics.risk_metrics.risk_adjusted_return.toFixed(2);
+        }
+
+        // Update buy & hold metrics
+        document.getElementById('buy-hold-return').textContent = data.buy_hold_metrics.total_return + '%';
+        document.getElementById('buy-hold-drawdown').textContent = data.buy_hold_metrics.max_drawdown + '%';
+
+        // Update buy & hold risk metrics
+        if (data.buy_hold_metrics.risk_metrics) {
+            document.getElementById('buy-hold-sharpe').textContent = 
+                data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2);
+            document.getElementById('buy-hold-risk-adjusted').textContent = 
+                data.buy_hold_metrics.risk_metrics.risk_adjusted_return.toFixed(2);
+        }
+
+        // Show comparison
+        const comparisonDiv = document.getElementById('strategy-comparison');
+        const returnComparison = document.getElementById('return-comparison');
+        const riskComparison = document.getElementById('risk-comparison');
+        const timeComparison = document.getElementById('time-comparison');
+        
+        comparisonDiv.classList.remove('hidden');
+        
+        // Return comparison
+        const returnDiff = data.strategy_metrics.total_return - data.buy_hold_metrics.total_return;
+        if (returnDiff > 0) {
+            returnComparison.innerHTML = `Your strategy <span class="text-green-600 font-medium">outperformed</span> buy & hold by <span class="text-green-600 font-medium">+${returnDiff.toFixed(2)}%</span>`;
+        } else if (returnDiff < 0) {
+            returnComparison.innerHTML = `Your strategy <span class="text-red-600 font-medium">underperformed</span> buy & hold by <span class="text-red-600 font-medium">${returnDiff.toFixed(2)}%</span>`;
+        } else {
+            returnComparison.innerHTML = `Your strategy <span class="text-gray-600 font-medium">matched</span> buy & hold returns`;
+        }
+
+        // Risk comparison
+        if (data.strategy_metrics.risk_metrics && data.buy_hold_metrics.risk_metrics) {
+            const sharpeDiff = data.strategy_metrics.risk_metrics.sharpe_ratio - data.buy_hold_metrics.risk_metrics.sharpe_ratio;
+            
+            if (sharpeDiff > 0) {
+                riskComparison.innerHTML = `On a risk-adjusted basis, your strategy shows <span class="text-green-600 font-medium">better</span> risk-reward characteristics with a higher Sharpe ratio (${data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2)} vs ${data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2)})`;
+            } else if (sharpeDiff < 0) {
+                riskComparison.innerHTML = `On a risk-adjusted basis, your strategy shows <span class="text-red-600 font-medium">worse</span> risk-reward characteristics with a lower Sharpe ratio (${data.strategy_metrics.risk_metrics.sharpe_ratio.toFixed(2)} vs ${data.buy_hold_metrics.risk_metrics.sharpe_ratio.toFixed(2)})`;
+            } else {
+                riskComparison.innerHTML = `Your strategy shows <span class="text-gray-600 font-medium">similar</span> risk-reward characteristics to buy & hold`;
+            }
+
+            // Time in market comparison
+            const timeInMarket = data.strategy_metrics.risk_metrics.time_in_market;
+            timeComparison.innerHTML = `Your strategy spent <span class="font-medium">${timeInMarket.toFixed(1)}%</span> of the time in the market, compared to 100% for buy & hold. ${
+                timeInMarket < 100 
+                    ? `This reduced market exposure could provide <span class="text-blue-600 font-medium">additional flexibility</span> for other opportunities.`
+                    : `This suggests a <span class="text-blue-600 font-medium">fully invested</span> approach similar to buy & hold.`
+            }`;
+        }
+
+        // Update chart and trade history
+        if (window.chartHandler && data.trades) {
+            window.chartHandler.addTradeMarkers(data.trades);
+        }
+
+        if (data.trades) {
+            updateTradeHistory(data.trades);
+        }
     }
 }); 

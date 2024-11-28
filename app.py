@@ -5,17 +5,47 @@ import numpy as np
 from datetime import datetime, timedelta
 import ta
 import os
+from flask_sqlalchemy import SQLAlchemy
+import uuid
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///strategies.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+class Strategy(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    config = db.Column(db.JSON, nullable=False)
+    
+    # Performance metrics
+    total_return = db.Column(db.Float)
+    sharpe_ratio = db.Column(db.Float)
+    win_rate = db.Column(db.Float)
+    risk_adjusted_return = db.Column(db.Float)
+    max_drawdown = db.Column(db.Float)
+    total_trades = db.Column(db.Integer)
+    time_in_market = db.Column(db.Float)
+
+with app.app_context():
+    db.create_all()
 
 def calculate_indicators(df, component):
     """Calculate technical indicators based on strategy parameters."""
     if component['type'].lower() == 'sma':
         period = component['params'].get('Period', 20)
         df[f'SMA_{period}'] = ta.trend.sma_indicator(df['Close'], window=period)
+    
+    elif component['type'].lower() == 'ema':
+        period = component['params'].get('Period', 20)
+        df[f'EMA_{period}'] = ta.trend.ema_indicator(df['Close'], window=period)
+    
     elif component['type'].lower() == 'rsi':
         period = component['params'].get('Period', 14)
         df[f'RSI_{period}'] = ta.momentum.rsi(df['Close'], window=period)
+    
     elif component['type'].lower() == 'macd':
         fast_period = component['params'].get('Fast Period', 12)
         slow_period = component['params'].get('Slow Period', 26)
@@ -28,6 +58,40 @@ def calculate_indicators(df, component):
         )
         df['MACD'] = macd.macd()
         df['MACD_Signal'] = macd.macd_signal()
+    
+    elif component['type'].lower() == 'bb':  # Bollinger Bands
+        period = component['params'].get('Period', 20)
+        std_dev = component['params'].get('StdDev', 2)
+        indicator_bb = ta.volatility.BollingerBands(
+            df['Close'], 
+            window=period, 
+            window_dev=std_dev
+        )
+        df['BB_Upper'] = indicator_bb.bollinger_hband()
+        df['BB_Middle'] = indicator_bb.bollinger_mavg()
+        df['BB_Lower'] = indicator_bb.bollinger_lband()
+    
+    elif component['type'].lower() == 'stoch':  # Stochastic Oscillator
+        k_period = component['params'].get('K Period', 14)
+        d_period = component['params'].get('D Period', 3)
+        df['Stoch_K'] = ta.momentum.stoch(df['High'], df['Low'], df['Close'], window=k_period, smooth_window=d_period)
+        df['Stoch_D'] = ta.momentum.stoch_signal(df['High'], df['Low'], df['Close'], window=k_period, smooth_window=d_period)
+    
+    elif component['type'].lower() == 'atr':  # Average True Range
+        period = component['params'].get('Period', 14)
+        df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'], window=period)
+    
+    elif component['type'].lower() == 'obv':  # On-Balance Volume
+        df['OBV'] = ta.volume.on_balance_volume(df['Close'], df['Volume'])
+    
+    elif component['type'].lower() == 'vwap':  # Volume Weighted Average Price
+        df['VWAP'] = ta.volume.volume_weighted_average_price(
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            volume=df['Volume']
+        )
+    
     return df
 
 def evaluate_condition(df, component, i, strategy):
@@ -269,6 +333,10 @@ def calculate_buy_hold_metrics(df):
 def index():
     return render_template('index.html')
 
+@app.route('/leaderboard')
+def leaderboard():
+    return render_template('leaderboard.html')
+
 @app.route('/api/fetch-btc-data')
 def fetch_btc_data():
     # Fetch Bitcoin data from Yahoo Finance
@@ -286,22 +354,57 @@ def fetch_btc_data():
     }
     return jsonify(data)
 
+@app.route('/api/leaderboard')
+def get_leaderboard():
+    metric = request.args.get('metric', 'total_return')
+    
+    # Validate metric to prevent SQL injection
+    valid_metrics = ['total_return', 'sharpe_ratio', 'win_rate', 'risk_adjusted_return']
+    if metric not in valid_metrics:
+        return jsonify({'error': 'Invalid metric'}), 400
+    
+    # Get top 100 strategies sorted by the specified metric
+    strategies = Strategy.query.order_by(getattr(Strategy, metric).desc()).limit(100).all()
+    
+    return jsonify({
+        'strategies': [{
+            'id': s.id,
+            'name': s.name,
+            'total_return': s.total_return,
+            'sharpe_ratio': s.sharpe_ratio,
+            'win_rate': s.win_rate,
+            'risk_adjusted_return': s.risk_adjusted_return,
+            'max_drawdown': s.max_drawdown,
+            'total_trades': s.total_trades,
+            'time_in_market': s.time_in_market
+        } for s in strategies]
+    })
+
+@app.route('/api/strategy/<strategy_id>')
+def get_strategy(strategy_id):
+    strategy = Strategy.query.get_or_404(strategy_id)
+    return jsonify({
+        'id': strategy.id,
+        'name': strategy.name,
+        'config': strategy.config
+    })
+
 @app.route('/api/backtest', methods=['POST'])
-def run_backtest():
+def backtest():
     try:
-        strategy = request.json
+        data = request.get_json()
         
         # Validate strategy structure
-        if not isinstance(strategy, dict):
+        if not isinstance(data, dict):
             raise ValueError("Invalid strategy format")
         
-        if 'indicators' not in strategy or not isinstance(strategy['indicators'], list):
+        if 'indicators' not in data or not isinstance(data['indicators'], list):
             raise ValueError("Strategy must include indicators array")
             
-        if 'entry_conditions' not in strategy or not isinstance(strategy['entry_conditions'], list):
+        if 'entry_conditions' not in data or not isinstance(data['entry_conditions'], list):
             raise ValueError("Strategy must include entry_conditions array")
             
-        if 'exit_conditions' not in strategy or not isinstance(strategy['exit_conditions'], list):
+        if 'exit_conditions' not in data or not isinstance(data['exit_conditions'], list):
             raise ValueError("Strategy must include exit_conditions array")
 
         # Fetch data
@@ -314,14 +417,14 @@ def run_backtest():
         buy_hold_metrics = calculate_buy_hold_metrics(df)
         
         # Calculate indicators
-        for indicator in strategy['indicators']:
+        for indicator in data['indicators']:
             df = calculate_indicators(df, indicator)
         
         # Prepare strategy for signal generation
         strategy_formatted = {
-            'indicators': strategy['indicators'],
-            'entry': strategy['entry_conditions'],
-            'exit': strategy['exit_conditions']
+            'indicators': data['indicators'],
+            'entry': data['entry_conditions'],
+            'exit': data['exit_conditions']
         }
         
         # Generate signals
@@ -330,7 +433,7 @@ def run_backtest():
         # Calculate metrics
         metrics = calculate_metrics(df, signals)
         
-        return jsonify({
+        results = {
             'status': 'success',
             'strategy_metrics': {
                 'total_return': round(metrics['totalReturn'] * 100, 2),
@@ -341,6 +444,75 @@ def run_backtest():
             },
             'buy_hold_metrics': buy_hold_metrics,
             'trades': metrics['trades']
+        }
+        
+        return jsonify(results)
+        
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400
+    except Exception as e:
+        app.logger.error(f"Backtest error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/save-strategy', methods=['POST'])
+def save_strategy():
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('name'):
+            raise ValueError("Strategy name is required")
+            
+        # Run backtest to get metrics
+        btc = yf.Ticker("BTC-USD")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        df = btc.history(start=start_date, end=end_date, interval='1d')
+        
+        # Calculate indicators
+        for indicator in data['indicators']:
+            df = calculate_indicators(df, indicator)
+        
+        # Prepare strategy for signal generation
+        strategy_formatted = {
+            'indicators': data['indicators'],
+            'entry': data['entry_conditions'],
+            'exit': data['exit_conditions']
+        }
+        
+        # Generate signals
+        signals = generate_signals(df, strategy_formatted)
+        
+        # Calculate metrics
+        metrics = calculate_metrics(df, signals)
+        
+        # Save strategy to database
+        strategy = Strategy(
+            name=data['name'],
+            description=data.get('description', ''),
+            config=data,
+            total_return=round(metrics['totalReturn'] * 100, 2),
+            sharpe_ratio=metrics['riskMetrics']['sharpe_ratio'],
+            win_rate=round(metrics['winRate'] * 100, 2),
+            risk_adjusted_return=metrics['riskMetrics']['risk_adjusted_return'],
+            max_drawdown=round(metrics['maxDrawdown'] * 100, 2),
+            total_trades=metrics['totalTrades'],
+            time_in_market=metrics['riskMetrics']['time_in_market']
+        )
+        
+        db.session.add(strategy)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Strategy saved successfully',
+            'strategy_id': strategy.id
         })
         
     except ValueError as e:
@@ -348,12 +520,11 @@ def run_backtest():
             'status': 'error',
             'message': str(e)
         }), 400
-        
     except Exception as e:
-        app.logger.error(f"Backtest error: {str(e)}", exc_info=True)
+        app.logger.error(f"Save strategy error: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': "An error occurred while running the backtest"
+            'message': str(e)
         }), 500
 
 if __name__ == '__main__':
